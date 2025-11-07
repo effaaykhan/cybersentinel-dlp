@@ -28,8 +28,9 @@ apiClient.interceptors.response.use(
 
       try {
         const refreshToken = useAuthStore.getState().refreshToken
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
         const response = await axios.post(
-          `${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`,
+          `${apiUrl}/auth/refresh`,
           { refresh_token: refreshToken }
         )
 

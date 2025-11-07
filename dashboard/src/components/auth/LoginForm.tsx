@@ -24,7 +24,8 @@ export default function LoginForm() {
       toast.success('Login successful!')
       router.push('/dashboard')
     } catch (err: any) {
-      const errorMessage = err.response?.data?.detail || 'Invalid credentials'
+      const errorMessage = err.message || err.response?.data?.detail || 'Invalid credentials'
+      console.error('Login error:', err)
       setError(errorMessage)
       toast.error(errorMessage)
     } finally {
@@ -73,7 +74,7 @@ export default function LoginForm() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="block w-full pl-10 pr-3 py-3 border-2 border-gray-600 rounded-xl focus:ring-4 focus:ring-purple-500/50 focus:border-purple-500 transition-all bg-gray-900/50 text-white placeholder-gray-400"
-                placeholder="admin"
+                placeholder="admin@cybersentinel.local"
                 disabled={loading}
               />
             </div>
@@ -128,8 +129,8 @@ export default function LoginForm() {
             Login Credentials
           </h4>
           <div className="text-sm text-gray-200 space-y-1.5">
-            <p className="font-mono"><span className="font-semibold text-white">Username:</span> admin</p>
-            <p className="font-mono"><span className="font-semibold text-white">Password:</span> admin</p>
+            <p className="font-mono"><span className="font-semibold text-white">Email:</span> admin@cybersentinel.local</p>
+            <p className="font-mono"><span className="font-semibold text-white">Password:</span> ChangeMe123!</p>
           </div>
         </div>
 

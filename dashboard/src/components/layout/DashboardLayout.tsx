@@ -26,7 +26,7 @@ interface DashboardLayoutProps {
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const { isAuthenticated, user, logout } = useAuthStore()
+  const { isAuthenticated, user, logout, accessToken } = useAuthStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
 
@@ -35,12 +35,24 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   }, [])
 
   useEffect(() => {
-    if (mounted && !isAuthenticated) {
+    // Wait for mount and check both isAuthenticated and accessToken
+    // This ensures persisted state has loaded
+    if (mounted && !isAuthenticated && !accessToken) {
       router.push('/')
     }
-  }, [isAuthenticated, router, mounted])
+  }, [isAuthenticated, accessToken, router, mounted])
 
-  if (!mounted || !isAuthenticated) {
+  // Show loading state while checking authentication
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    )
+  }
+
+  // Only redirect if we're sure user is not authenticated (after mount and no token)
+  if (mounted && !isAuthenticated && !accessToken) {
     return null
   }
 

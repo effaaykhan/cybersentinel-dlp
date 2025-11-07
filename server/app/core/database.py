@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
 )
 from sqlalchemy.orm import declarative_base
+from sqlalchemy import text
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 import structlog
 
@@ -155,7 +156,3 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
         finally:
             await session.close()
-
-
-# Import text for raw SQL queries
-from sqlalchemy import text

@@ -24,36 +24,65 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
 
       login: async (email: string, password: string) => {
-        // Mock authentication - credentials: admin / admin
-        const VALID_USERNAME = 'admin'
-        const VALID_PASSWORD = 'admin'
+        // Call real API for authentication
+        const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+        
+        try {
+          const formData = new URLSearchParams()
+          formData.append('username', email.trim())
+          formData.append('password', password.trim())
 
-        // Trim whitespace from inputs
-        const cleanEmail = email.trim()
-        const cleanPassword = password.trim()
+          console.log('Attempting login to:', `${API_URL}/auth/login`)
+          const response = await fetch(`${API_URL}/auth/login`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData,
+          })
 
-        // Simulate API call delay
-        await new Promise(resolve => setTimeout(resolve, 500))
+          console.log('Login response status:', response.status, response.statusText)
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ detail: 'Login failed' }))
+            console.error('Login error:', errorData)
+            throw new Error(errorData.detail || 'Invalid username or password')
+          }
 
-        // Validate credentials
-        if (cleanEmail !== VALID_USERNAME || cleanPassword !== VALID_PASSWORD) {
-          throw new Error('Invalid username or password')
+          const data = await response.json()
+          const { access_token, refresh_token } = data
+
+          // Get user info from token (decode JWT payload)
+          let userEmail = email.trim()
+          let userRole = 'viewer'
+          let userId = 'user-001'
+
+          try {
+            // Decode JWT to get user info
+            const tokenParts = access_token.split('.')
+            if (tokenParts.length === 3) {
+              const payload = JSON.parse(atob(tokenParts[1]))
+              userEmail = payload.email || email.trim()
+              userRole = payload.role || 'viewer'
+              userId = payload.sub || 'user-001'
+            }
+          } catch (e) {
+            // If token decode fails, use defaults
+            console.warn('Could not decode token:', e)
+          }
+
+          set({
+            isAuthenticated: true,
+            accessToken: access_token,
+            refreshToken: refresh_token,
+            user: {
+              email: userEmail,
+              role: userRole,
+              id: userId,
+            },
+          })
+        } catch (error: any) {
+          throw new Error(error.message || 'Login failed. Please check your credentials.')
         }
-
-        // Mock tokens
-        const mockAccessToken = 'mock-access-token-' + Date.now()
-        const mockRefreshToken = 'mock-refresh-token-' + Date.now()
-
-        set({
-          isAuthenticated: true,
-          accessToken: mockAccessToken,
-          refreshToken: mockRefreshToken,
-          user: {
-            email: VALID_USERNAME,
-            role: 'admin',
-            id: 'admin-001',
-          },
-        })
       },
 
       logout: () => {

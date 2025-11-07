@@ -21,9 +21,17 @@ COPY --from=deps /app/node_modules ./node_modules
 # Copy all application files (respects .dockerignore)
 COPY . .
 
+# Accept build arguments for Next.js public env vars
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+ARG NEXT_PUBLIC_APP_NAME=CyberSentinel DLP
+ARG NEXT_PUBLIC_APP_VERSION=1.0.0
+
 # Set environment variables for build
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV NODE_ENV production
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_PUBLIC_APP_NAME=${NEXT_PUBLIC_APP_NAME}
+ENV NEXT_PUBLIC_APP_VERSION=${NEXT_PUBLIC_APP_VERSION}
 
 # Build application
 RUN npm run build
