@@ -3,7 +3,7 @@ Configuration Management
 Centralized configuration using Pydantic Settings
 """
 
-from typing import List, Optional
+from typing import List, Optional, Union
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -33,11 +33,13 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     PASSWORD_MIN_LENGTH: int = 12
 
-    # CORS
-    CORS_ORIGINS: List[str] = Field(
-        default=["http://localhost:3000", "http://0.0.0.0:3000"]
+    # CORS - Default to allow all origins for agent connections
+    # Use "*" or specific origins like "http://localhost:3000,http://other:3000"
+    # Accept Union to handle both string and list from environment variables
+    CORS_ORIGINS: Union[str, List[str]] = Field(
+        default=["*"]  # Allow all by default for easier agent setup
     )
-    ALLOWED_HOSTS: List[str] = Field(default=["*"])
+    ALLOWED_HOSTS: Union[str, List[str]] = Field(default=["*"])
 
     # PostgreSQL Configuration
     POSTGRES_HOST: str = Field(default="localhost")
@@ -138,18 +140,62 @@ class Settings(BaseSettings):
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):
-        """Parse CORS origins from comma-separated string"""
+        """Parse CORS origins from comma-separated string or JSON array"""
+        # Already a list, return as-is
+        if isinstance(v, list):
+            return v
+        # Handle string input
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",")]
-        return v
+            # Handle wildcard
+            v_stripped = v.strip()
+            if v_stripped == "*":
+                return ["*"]
+            # Try to parse as JSON array first
+            try:
+                import json
+                parsed = json.loads(v_stripped)
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
+            # Fall back to comma-separated string
+            origins = [origin.strip() for origin in v_stripped.split(",") if origin.strip()]
+            # Handle wildcard in comma-separated list
+            if "*" in origins:
+                return ["*"]
+            return origins if origins else ["*"]
+        # Default fallback
+        return ["*"]
 
     @field_validator("ALLOWED_HOSTS", mode="before")
     @classmethod
     def parse_allowed_hosts(cls, v):
-        """Parse allowed hosts from comma-separated string"""
+        """Parse allowed hosts from comma-separated string or JSON array"""
+        # Already a list, return as-is
+        if isinstance(v, list):
+            return v
+        # Handle string input
         if isinstance(v, str):
-            return [host.strip() for host in v.split(",")]
-        return v
+            v_stripped = v.strip()
+            # Handle wildcard
+            if v_stripped == "*":
+                return ["*"]
+            # Try to parse as JSON array first
+            try:
+                import json
+                parsed = json.loads(v_stripped)
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
+            # Fall back to comma-separated string
+            hosts = [host.strip() for host in v_stripped.split(",") if host.strip()]
+            # Handle wildcard in comma-separated list
+            if "*" in hosts:
+                return ["*"]
+            return hosts if hosts else ["*"]
+        # Default fallback
+        return ["*"]
 
     model_config = SettingsConfigDict(
         env_file=".env",

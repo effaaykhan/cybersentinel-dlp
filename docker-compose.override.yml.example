@@ -1,0 +1,24 @@
+# Docker Compose Override Example
+# Copy this to docker-compose.override.yml and customize for your environment
+# This file allows you to override default settings without modifying docker-compose.yml
+
+version: '3.8'
+
+services:
+  server:
+    environment:
+      # Override CORS to allow all origins (useful for agent connections)
+      - CORS_ORIGINS=["*"]
+      # Override allowed hosts
+      - ALLOWED_HOSTS=["*"]
+      # Set your server IP here (or leave blank for auto-detection)
+      # - SERVER_IP=YOUR_SERVER_IP
+
+  dashboard:
+    build:
+      args:
+        # Override dashboard API URL with your server IP
+        - NEXT_PUBLIC_API_URL=http://YOUR_SERVER_IP:8000/api/v1
+    environment:
+      - NEXT_PUBLIC_API_URL=http://YOUR_SERVER_IP:8000/api/v1
+

@@ -78,8 +78,10 @@ services:
       - REDIS_HOST=localhost
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-changeme123}
-      - CORS_ORIGINS=["http://localhost:3000","http://0.0.0.0:3000","http://172.23.19.78:3000"]
-      - ALLOWED_HOSTS=["*"]
+      # CORS: Allow all origins for agent connections (use ["*"] or comma-separated list)
+      - CORS_ORIGINS=*
+      # Allowed hosts: Use * to allow all hosts
+      - ALLOWED_HOSTS=*
     volumes:
       - ./server:/app
       - ./ml/models:/app/ml/models

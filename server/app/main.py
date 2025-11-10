@@ -93,10 +93,17 @@ app.add_middleware(
     window_seconds=settings.RATE_LIMIT_WINDOW,
 )
 
-# CORS
+# CORS - Allow all origins for agent connections
+# Convert settings.CORS_ORIGINS to list if needed
+cors_origins = settings.CORS_ORIGINS
+if isinstance(cors_origins, str):
+    cors_origins = ["*"] if cors_origins == "*" else [cors_origins]
+elif not isinstance(cors_origins, list):
+    cors_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=cors_origins,  # Allow all origins - agents can connect from anywhere
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -106,10 +113,24 @@ app.add_middleware(
 # Compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Trusted hosts
+# Trusted hosts - Skip for agent endpoints to allow connections from anywhere
+# Only apply in production and skip for public agent endpoints
 if not settings.DEBUG:
+    from starlette.middleware.trustedhost import TrustedHostMiddleware as THM
+    
+    class SelectiveTrustedHostMiddleware(THM):
+        async def dispatch(self, request, call_next):
+            # Skip trusted host check for agent registration and event endpoints
+            if request.url.path.startswith("/api/v1/agents/") or \
+               request.url.path.startswith("/api/v1/agents") or \
+               request.url.path.startswith("/api/v1/events/") or \
+               request.url.path.startswith("/api/v1/events"):
+                return await call_next(request)
+            # Apply trusted host check for other endpoints
+            return await super().dispatch(request, call_next)
+    
     app.add_middleware(
-        TrustedHostMiddleware,
+        SelectiveTrustedHostMiddleware,
         allowed_hosts=settings.ALLOWED_HOSTS,
     )
 
