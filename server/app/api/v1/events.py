@@ -31,6 +31,7 @@ class DLPEvent(BaseModel):
     file_path: Optional[str]
     destination: Optional[str]
     blocked: bool
+    agent_id: Optional[str] = None
 
 
 class EventQueryParams(BaseModel):
@@ -111,6 +112,7 @@ async def get_events(
             "file_path": event_doc.get("file_path"),
             "destination": event_doc.get("destination"),
             "blocked": event_doc.get("blocked", False) or (event_doc.get("action") == "blocked"),
+            "agent_id": event_doc.get("agent_id"),
         }
         events.append(transformed_event)
 
@@ -133,12 +135,30 @@ async def get_event(
     Get specific DLP event by ID
     """
     db = get_mongodb()
-    event = await db.dlp_events.find_one({"id": event_id})
+    event_doc = await db.dlp_events.find_one({"id": event_id})
 
-    if not event:
+    if not event_doc:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    return event
+    # Transform MongoDB document to match DLPEvent model
+    transformed_event = {
+        "id": event_doc.get("id") or event_doc.get("event_id", ""),
+        "timestamp": event_doc.get("timestamp", datetime.utcnow()),
+        "event_type": event_doc.get("event_type", "unknown"),
+        "source": event_doc.get("source") or event_doc.get("source_type", "unknown"),
+        "user_email": event_doc.get("user_email", ""),
+        "classification_score": event_doc.get("classification", {}).get("score", 0.0) if isinstance(event_doc.get("classification"), dict) else event_doc.get("classification_score", 0.0),
+        "classification_labels": event_doc.get("classification", {}).get("labels", []) if isinstance(event_doc.get("classification"), dict) else event_doc.get("classification_labels", []),
+        "policy_id": event_doc.get("policy_id"),
+        "action_taken": event_doc.get("action_taken") or event_doc.get("action", "logged"),
+        "severity": event_doc.get("severity", "low"),
+        "file_path": event_doc.get("file_path"),
+        "destination": event_doc.get("destination"),
+        "blocked": event_doc.get("blocked", False) or (event_doc.get("action") == "blocked"),
+        "agent_id": event_doc.get("agent_id"),
+    }
+
+    return transformed_event
 
 
 @router.get("/stats/summary")
