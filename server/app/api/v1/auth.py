@@ -118,11 +118,14 @@ async def login(
         )
 
     # Create tokens
+    # Convert role enum to string if needed
+    role_str = user.role.value if hasattr(user.role, 'value') else str(user.role)
+    
     access_token = create_access_token(
         data={
             "sub": str(user.id),
             "email": user.email,
-            "role": user.role,
+            "role": role_str,
         }
     )
 

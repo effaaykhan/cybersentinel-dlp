@@ -44,6 +44,7 @@ class Policy(BaseModel):
     created_by: Optional[str] = None
 
 
+@router.get("", response_model=List[Policy])
 @router.get("/", response_model=List[Policy])
 async def get_policies(
     skip: int = Query(0, ge=0),
@@ -74,16 +75,17 @@ async def get_policies(
             "compliance_tags": policy.compliance_tags or [],
             "created_at": policy.created_at,
             "updated_at": policy.updated_at,
-            "created_by": policy.created_by,
+            "created_by": str(policy.created_by) if policy.created_by else None,
         }
         for policy in policies
     ]
 
 
+@router.post("", response_model=Policy, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=Policy, status_code=status.HTTP_201_CREATED)
 async def create_policy(
     policy: Policy,
-    current_user: dict = Depends(require_role("analyst")),
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -104,7 +106,7 @@ async def create_policy(
             description=policy.description,
             conditions=conditions_dict,
             actions=actions_dict,
-            created_by=current_user["sub"],
+            created_by=current_user.get("id") or current_user.get("sub"),
             enabled=policy.enabled,
             priority=policy.priority,
             compliance_tags=policy.compliance_tags,
@@ -128,7 +130,7 @@ async def create_policy(
             "compliance_tags": created_policy.compliance_tags or [],
             "created_at": created_policy.created_at,
             "updated_at": created_policy.updated_at,
-            "created_by": created_policy.created_by,
+            "created_by": str(created_policy.created_by) if created_policy.created_by else None,
         }
 
     except ValueError as e:
@@ -186,7 +188,7 @@ async def update_policy(
             "compliance_tags": updated_policy.compliance_tags or [],
             "created_at": updated_policy.created_at,
             "updated_at": updated_policy.updated_at,
-            "created_by": updated_policy.created_by,
+            "created_by": str(updated_policy.created_by) if updated_policy.created_by else None,
         }
 
     except ValueError as e:
@@ -263,3 +265,27 @@ async def disable_policy(
     )
 
     return {"message": "Policy disabled successfully", "policy_id": str(policy.id)}
+
+
+@router.get("/stats/summary")
+async def get_policy_stats(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Get summary statistics of all policies
+    """
+    policy_service = PolicyService(db)
+    
+    total = await policy_service.get_policy_count(enabled_only=False)
+    active = await policy_service.get_policy_count(enabled_only=True)
+    
+    # Get violations count (placeholder - would need to query events table)
+    # For now, return 0 as violations tracking would require event-policy linking
+    violations = 0
+    
+    return {
+        "total_policies": total,
+        "active_policies": active,
+        "total_violations": violations,
+    }

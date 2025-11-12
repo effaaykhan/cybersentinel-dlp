@@ -88,18 +88,158 @@ export default function PoliciesPage() {
     resetForm()
   }
 
+  // Transform API policy format back to frontend display format
+  const transformPolicyFromAPI = (apiPolicy: any) => {
+    // Convert priority back to severity
+    const priorityToSeverity: Record<number, string> = {
+      25: 'low',
+      50: 'medium',
+      75: 'high',
+      100: 'critical'
+    }
+    
+    // Extract conditions
+    const conditions = apiPolicy.conditions || []
+    const destinations: string[] = []
+    const fileTypes: string[] = []
+    const patterns: string[] = []
+    
+    conditions.forEach((cond: any) => {
+      if (cond.field === 'destination' && cond.operator === 'in') {
+        destinations.push(...(Array.isArray(cond.value) ? cond.value : [cond.value]))
+      } else if (cond.field === 'file_extension' && cond.operator === 'in') {
+        fileTypes.push(...(Array.isArray(cond.value) ? cond.value : [cond.value]))
+      } else if (cond.field === 'pattern' && cond.operator === 'in') {
+        patterns.push(...(Array.isArray(cond.value) ? cond.value : [cond.value]))
+      }
+    })
+    
+    // Extract action
+    const actions = apiPolicy.actions || []
+    let action = 'alert'
+    let severity = priorityToSeverity[apiPolicy.priority] || 'medium'
+    
+    if (actions.length > 0) {
+      const firstAction = actions[0]
+      action = firstAction.type || 'alert'
+      if (firstAction.parameters?.severity) {
+        severity = firstAction.parameters.severity
+      }
+    }
+    
+    return {
+      name: apiPolicy.name || '',
+      description: apiPolicy.description || '',
+      severity: severity as Policy['severity'],
+      action: action as Policy['action'],
+      destinations: destinations,
+      fileTypes: fileTypes,
+      patterns: patterns,
+    }
+  }
+
   const handleEditPolicy = (policy: any) => {
     setEditingPolicy(policy)
-    setPolicyForm({
-      name: policy.name,
-      description: policy.description,
-      severity: policy.severity,
-      action: policy.action,
-      destinations: policy.destinations || [],
-      fileTypes: policy.fileTypes || policy.file_types || [],
-      patterns: policy.patterns || [],
-    })
+    
+    // Transform API format to frontend format if needed
+    const formData = transformPolicyFromAPI(policy)
+    
+    setPolicyForm(formData)
     setShowModal(true)
+  }
+
+  // Transform frontend policy format to backend API format
+  const transformPolicyForAPI = (formData: typeof policyForm) => {
+    // Convert severity to priority (higher severity = higher priority)
+    const severityToPriority: Record<string, number> = {
+      'low': 25,
+      'medium': 50,
+      'high': 75,
+      'critical': 100
+    }
+
+    // Build conditions array from destinations, fileTypes, and patterns
+    const conditions: Array<{ field: string; operator: string; value: any }> = []
+
+    // Add destination conditions
+    if (formData.destinations.length > 0) {
+      conditions.push({
+        field: 'destination',
+        operator: 'in',
+        value: formData.destinations
+      })
+    }
+
+    // Add file type conditions
+    if (formData.fileTypes.length > 0) {
+      conditions.push({
+        field: 'file_extension',
+        operator: 'in',
+        value: formData.fileTypes
+      })
+    }
+
+    // Add pattern conditions (use classification.labels field)
+    if (formData.patterns.length > 0) {
+      conditions.push({
+        field: 'classification.labels',
+        operator: 'contains_any',
+        value: formData.patterns
+      })
+    }
+
+    // If no conditions specified, add a default condition that matches all
+    if (conditions.length === 0) {
+      conditions.push({
+        field: 'all',
+        operator: 'equals',
+        value: true
+      })
+    }
+
+    // Build actions array - always include log, then add additional actions
+    const actions: Array<{ type: string; parameters?: any }> = []
+    
+    // Always add log action first
+    actions.push({
+      type: 'log',
+      parameters: {}
+    })
+
+    // Add additional action based on formData.action
+    if (formData.action === 'alert') {
+      actions.push({
+        type: 'alert',
+        parameters: {
+          severity: formData.severity
+        }
+      })
+    } else if (formData.action === 'quarantine') {
+      actions.push({
+        type: 'quarantine',
+        parameters: {
+          severity: formData.severity
+        }
+      })
+    } else if (formData.action === 'block') {
+      actions.push({
+        type: 'block',
+        parameters: {
+          severity: formData.severity
+        }
+      })
+    }
+    // If action is 'log', we already added it above, so no additional action needed
+
+    return {
+      name: formData.name,
+      description: formData.description,
+      enabled: true, // Default to enabled
+      priority: severityToPriority[formData.severity] || 50,
+      conditions: conditions,
+      actions: actions,
+      compliance_tags: []
+    }
   }
 
   const handleSavePolicy = async () => {
@@ -109,13 +249,16 @@ export default function PoliciesPage() {
     }
 
     try {
+      // Transform frontend format to backend API format
+      const apiPolicyData = transformPolicyForAPI(policyForm)
+
       if (editingPolicy) {
         // Update existing policy via API
-        await api.updatePolicy(editingPolicy.policy_id || String(editingPolicy.id), policyForm)
+        await api.updatePolicy(editingPolicy.policy_id || String(editingPolicy.id), apiPolicyData)
         toast.success('Policy updated successfully!')
       } else {
         // Create new policy via API
-        await api.createPolicy(policyForm)
+        await api.createPolicy(apiPolicyData)
         toast.success('Policy created successfully!')
       }
 
@@ -125,9 +268,10 @@ export default function PoliciesPage() {
 
       setShowModal(false)
       resetForm()
-    } catch (error) {
-      toast.error('Failed to save policy')
-      console.error(error)
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Failed to save policy'
+      toast.error(`Failed to save policy: ${errorMessage}`)
+      console.error('Policy save error:', error)
     }
   }
 
@@ -147,37 +291,46 @@ export default function PoliciesPage() {
 
   const handleToggleStatus = async (policy: any) => {
     try {
-      const newStatus = policy.status === 'active' ? 'inactive' : 'active'
-      await api.updatePolicy(policy.policy_id || String(policy.id), {
-        ...policy,
-        status: newStatus
-      })
+      const newEnabled = !policy.enabled
+      // Transform to API format for update
+      const formData = transformPolicyFromAPI(policy)
+      const apiPolicyData = transformPolicyForAPI(formData)
+      apiPolicyData.enabled = newEnabled
+      
+      await api.updatePolicy(String(policy.id), apiPolicyData)
       toast.success('Policy status updated!')
       queryClient.invalidateQueries({ queryKey: ['policies'] })
-    } catch (error) {
-      toast.error('Failed to update policy status')
-      console.error(error)
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Failed to update policy status'
+      toast.error(`Failed to update policy status: ${errorMessage}`)
+      console.error('Policy status update error:', error)
     }
   }
 
   const handleDuplicatePolicy = async (policy: any) => {
     try {
-      const duplicatedPolicy = {
+      // Extract data from existing policy (handle both API format and display format)
+      const formData = {
         name: `${policy.name} (Copy)`,
         description: policy.description,
-        severity: policy.severity,
-        action: policy.action,
+        severity: policy.severity || 'medium',
+        action: policy.action || 'alert',
         destinations: policy.destinations || [],
         fileTypes: policy.fileTypes || policy.file_types || [],
         patterns: policy.patterns || [],
       }
-      await api.createPolicy(duplicatedPolicy)
+      
+      // Transform to API format
+      const apiPolicyData = transformPolicyForAPI(formData)
+      
+      await api.createPolicy(apiPolicyData)
       toast.success('Policy duplicated successfully!')
       queryClient.invalidateQueries({ queryKey: ['policies'] })
       queryClient.invalidateQueries({ queryKey: ['policy-stats'] })
-    } catch (error) {
-      toast.error('Failed to duplicate policy')
-      console.error(error)
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Failed to duplicate policy'
+      toast.error(`Failed to duplicate policy: ${errorMessage}`)
+      console.error('Policy duplicate error:', error)
     }
   }
 
@@ -314,8 +467,13 @@ export default function PoliciesPage() {
             </div>
           ) : (
             <div className="divide-y divide-gray-700">
-              {policies.map((policy: any) => (
-                <div key={policy.policy_id || policy.id} className="p-6 hover:bg-gray-700/30 transition-colors">
+              {policies.map((policy: any) => {
+                // Transform API format to display format
+                const displayPolicy = transformPolicyFromAPI(policy)
+                const status = policy.enabled ? 'active' : 'inactive'
+                
+                return (
+                <div key={policy.id || policy.policy_id} className="p-6 hover:bg-gray-700/30 transition-colors">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-4 flex-1">
                       <div className="p-3 bg-indigo-900/30 border border-indigo-500/50 rounded-lg">
@@ -324,19 +482,19 @@ export default function PoliciesPage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-3">
                           <h3 className="text-white font-semibold text-lg">{policy.name}</h3>
-                          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-xs font-medium uppercase ${getSeverityColor(policy.severity)}`}>
-                            {policy.severity}
+                          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-xs font-medium uppercase ${getSeverityColor(displayPolicy.severity)}`}>
+                            {displayPolicy.severity}
                           </span>
                           <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md border text-xs font-medium uppercase text-purple-400 bg-purple-900/30 border-purple-500/50">
-                            {getActionIcon(policy.action)}
-                            {policy.action}
+                            {getActionIcon(displayPolicy.action)}
+                            {displayPolicy.action}
                           </span>
                         </div>
                         <p className="text-gray-400 mt-1">{policy.description}</p>
                         <div className="flex items-center gap-4 mt-3 text-sm">
-                          <span className="text-gray-500">Destinations: <span className="text-white font-medium">{policy.destinations?.length || 0}</span></span>
-                          <span className="text-gray-500">File Types: <span className="text-white font-medium">{(policy.fileTypes || policy.file_types || []).length}</span></span>
-                          <span className="text-gray-500">Patterns: <span className="text-white font-medium">{policy.patterns?.length || 0}</span></span>
+                          <span className="text-gray-500">Destinations: <span className="text-white font-medium">{displayPolicy.destinations.length}</span></span>
+                          <span className="text-gray-500">File Types: <span className="text-white font-medium">{displayPolicy.fileTypes.length}</span></span>
+                          <span className="text-gray-500">Patterns: <span className="text-white font-medium">{displayPolicy.patterns.length}</span></span>
                           <span className="text-gray-500">Violations: <span className="text-red-400 font-medium">{policy.violations || 0}</span></span>
                         </div>
                       </div>
@@ -345,13 +503,13 @@ export default function PoliciesPage() {
                       <button
                         onClick={() => handleToggleStatus(policy)}
                         className={`inline-flex items-center gap-2 px-3 py-1 rounded-lg border text-sm font-medium ${
-                          policy.status === 'active'
+                          status === 'active'
                             ? 'text-green-400 bg-green-900/30 border-green-500/50'
                             : 'text-gray-400 bg-gray-900/30 border-gray-500/50'
                         }`}
                       >
-                        {policy.status === 'active' ? <CheckCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
-                        {policy.status === 'active' ? 'Active' : 'Inactive'}
+                        {status === 'active' ? <CheckCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                        {status === 'active' ? 'Active' : 'Inactive'}
                       </button>
                       <button
                         onClick={() => handleEditPolicy(policy)}
@@ -377,7 +535,8 @@ export default function PoliciesPage() {
                     </div>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

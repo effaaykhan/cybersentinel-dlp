@@ -156,7 +156,7 @@ export const api = {
   },
 
   createPolicy: async (policy: any) => {
-    const { data } = await apiClient.post('/policies', policy)
+    const { data } = await apiClient.post('/policies/', policy)
     return data
   },
 
